@@ -8,7 +8,6 @@
 import numpy as np
 import pandas as pd
 import matplotlib
-
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 
@@ -17,9 +16,35 @@ matplotlib.rcParams['font.sans-serif'] = 'Arial'
 
 import operator
 import math
-from scipy.stats import wilcoxon
+from scipy.stats import wilcoxon, kruskal
 from scipy.stats import friedmanchisquare
 import networkx
+
+
+def compute_CD(avranks, n, alpha="0.05", test="nemenyi"):
+    """
+    Returns critical difference for Nemenyi or Bonferroni-Dunn test
+    according to given alpha (either alpha="0.05" or alpha="0.1") for average
+    ranks and number of tested datasets N. Test can be either "nemenyi" for
+    for Nemenyi two tailed test or "bonferroni-dunn" for Bonferroni-Dunn test.
+    """
+    k = len(avranks)
+    d = {("nemenyi", "0.05"): [0, 0, 1.959964, 2.343701, 2.569032, 2.727774,
+                               2.849705, 2.94832, 3.030879, 3.101730, 3.163684,
+                               3.218654, 3.268004, 3.312739, 3.353618, 3.39123,
+                               3.426041, 3.458425, 3.488685, 3.517073,
+                               3.543799],
+         ("nemenyi", "0.1"): [0, 0, 1.644854, 2.052293, 2.291341, 2.459516,
+                              2.588521, 2.692732, 2.779884, 2.854606, 2.919889,
+                              2.977768, 3.029694, 3.076733, 3.119693, 3.159199,
+                              3.195743, 3.229723, 3.261461, 3.291224, 3.319233],
+         ("bonferroni-dunn", "0.05"): [0, 0, 1.960, 2.241, 2.394, 2.498, 2.576,
+                                       2.638, 2.690, 2.724, 2.773],
+         ("bonferroni-dunn", "0.1"): [0, 0, 1.645, 1.960, 2.128, 2.241, 2.326,
+                                      2.394, 2.450, 2.498, 2.539]}
+    q = d[(test, alpha)]
+    cd = q[k] * (k * (k + 1) / (6.0 * n)) ** 0.5
+    return cd
 
 
 def graph_ranks(avranks, names, cd=None, cdmethod=None, lowv=None, highv=None,
@@ -226,7 +251,7 @@ def graph_ranks(avranks, names, cd=None, cdmethod=None, lowv=None, highv=None,
               (textspace - 0.1, chei)],
              linewidth=0.7, color='red' if 'ours' in nnames[i] else 'black')
         if labels:
-            text(textspace + 0.3, chei - 0.075, format(ssums[i], '.3f'), ha="right", va="center", size=10)
+            text(textspace + 0.25, chei - 0.075, format(ssums[i], '.2f'), ha="right", va="center", size=10)
         text(textspace - 0.2, chei, nnames[i],
              color='red' if 'ours' in nnames[i] else 'black', ha="right", va="center")
 
@@ -237,7 +262,7 @@ def graph_ranks(avranks, names, cd=None, cdmethod=None, lowv=None, highv=None,
               (textspace + scalewidth + 0.1, chei)],
              linewidth=0.7, color='red' if 'ours' in nnames[i] else 'black')
         if labels:
-            text(textspace + scalewidth - 0.3, chei - 0.075, format(ssums[i], '.3f'), ha="left", va="center", size=10)
+            text(textspace + scalewidth - 0.25, chei - 0.075, format(ssums[i], '.2f'), ha="left", va="center", size=10)
         text(textspace + scalewidth + 0.2, chei, nnames[i],
              color='red' if 'ours' in nnames[i] else 'black', ha="left", va="center")
 
@@ -309,24 +334,24 @@ def draw_cd_diagram(df_perf=None, alpha=0.05, title=None, labels=False, filename
     Draws the critical difference diagram given the list of pairwise classifiers that are
     significant or not
     """
-    p_values, average_ranks, _ = wilcoxon_holm(df_perf=df_perf, alpha=alpha)
-
+    p_values, average_ranks, n_datasets = wilcoxon_holm(df_perf=df_perf, alpha=alpha)
+    cd = True
     print('Average ranks: ', average_ranks)
 
     for p in p_values:
         print(p)
 
-    graph_ranks(average_ranks.values, average_ranks.keys(), cd=True,
-                reverse=True, width=9, textspace=1.5, labels=labels)
+    graph_ranks(average_ranks.values, average_ranks.keys(), cd=cd,
+                reverse=False, width=9, textspace=1.5, labels=labels)
 
     font = {'family': 'sans-serif',
         'color':  'black',
         'weight': 'normal',
-        'size': 22,
+        'size': 16,
         }
     if title:
         plt.title(title, fontdict=font, y=1.0, x=0.5)
-    plt.savefig('plots/cd-diagram-{}.png'.format(filename), bbox_inches='tight')
+    plt.savefig('plots/cd_{}.png'.format(filename), bbox_inches='tight')
 
 
 def wilcoxon_holm(alpha=0.05, df_perf=None, classifier_col='Algorithm', data_col='Dataset', metric_col='Accuracy'):
@@ -349,6 +374,7 @@ def wilcoxon_holm(alpha=0.05, df_perf=None, classifier_col='Algorithm', data_col
     friedman_p_value = friedmanchisquare(*(
         np.array(df_perf.loc[df_perf[classifier_col] == c][metric_col])
         for c in classifiers))[1]
+    print('Friedman p-value: {}'.format(friedman_p_value))
     if friedman_p_value >= alpha:
         # then the null hypothesis over the entire classifiers cannot be rejected
         print('the null hypothesis over the entire classifiers cannot be rejected')
@@ -415,7 +441,7 @@ def wilcoxon_holm(alpha=0.05, df_perf=None, classifier_col='Algorithm', data_col
     print(df_ranks)
     # number of wins
     dfff = df_ranks.rank(ascending=False)
-    # print(dfff[dfff == 1.0].sum(axis=1))
+    print(dfff[dfff == 1.0].sum(axis=1))
 
     # average the ranks
     average_ranks = df_ranks.rank(ascending=False).mean(axis=1).sort_values(ascending=False)
@@ -423,7 +449,7 @@ def wilcoxon_holm(alpha=0.05, df_perf=None, classifier_col='Algorithm', data_col
     return p_values, average_ranks, n_datasets
 
 
-scenario = 'Class'
+scenario = 'task'
 df_perf = pd.read_csv('data/results_{}.csv'.format(scenario.lower()), index_col=False)
-draw_cd_diagram(df_perf=df_perf, alpha=0.1, title='Accuracy ({}-IL)'.format(scenario),
+draw_cd_diagram(df_perf=df_perf, alpha=0.1, title=''.format(scenario),
                 labels=True, filename=scenario.lower())
